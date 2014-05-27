@@ -80,7 +80,8 @@ void GraphicsEngine::render() {
 }
 
 void GraphicsEngine::create_object() {
-	Stem *stem_node = new Stem(1, 1, 1, 1, NULL);
+	// Three segments to the stem
+	Stem *stem_node = new Stem(1, 3, 0, 1, 1, NULL);
 	osg::Group* stem_group = stem_node->stem;
 	osg::PositionAttitudeTransform* obj_transform =
 		new osg::PositionAttitudeTransform();

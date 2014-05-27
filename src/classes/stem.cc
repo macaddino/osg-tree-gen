@@ -2,14 +2,16 @@
 #include <osg/Geometry>
 #include <osg/Geode>
 #include <osg/Group>
+#include <osg/PositionAttitudeTransform>
 #include <osg/PrimitiveSet>
 #include <osg/Vec3>
 #include <osg/Vec4>
 #include <osgUtil/SmoothingVisitor>
 #include <cmath>
 
-Stem::Stem(int recursion_level, int num_segments, int curve_back, int curve_variation, Stem *parent) : recursion_level(recursion_level), num_segments(num_segments), curve_back(curve_back), curve_variation(curve_variation), parent(parent) {
-	this->stem = make_stem();
+Stem::Stem(int recursion_level, int num_segments, int curve, int curve_back, int curve_variation, Stem *parent) : recursion_level(recursion_level), num_segments(num_segments), curve(curve), curve_back(curve_back), curve_variation(curve_variation), parent(parent) {
+	float stem_len = 15.0;
+	this->stem = make_stem(this->num_segments, stem_len);
 }
 
 // Function taken from http://forum.openscenegraph.org/viewtopic.php?t=3289&view=previous
@@ -150,13 +152,40 @@ osg::Geometry * Stem::create_truncated_cone_geometry(float start_radius, float e
 */
 } 
 
-osg::Group * Stem::make_stem() {
+osg::Group * Stem::make_stem(int num_segments, float stem_len) {
 	osg::Group *stem = new osg::Group();
-	// Make one demo truncated cone for now.
-	osg::Geode* stem_geode = new osg::Geode();
+
+	// Make the assumption that each segment will be of equal length
+	float seg_length = stem_len / num_segments;
+
+	// Have orange color for stem.
 	osg::Vec4* colour = new osg::Vec4(1.0, 0.5, 0.1, 1.0);
-	stem_geode->addDrawable(this->create_truncated_cone_geometry(6.0, 3.0, 15.0, colour));
-	stem->addChild(stem_geode);
+	
+	// For now, just decrement radii by one for each segment
+	// Assume head radius is one unit less than base radius
+	float base_radius = 5.0;
+	float head_radius = base_radius - 1.0;
+	
+	for (int i = 0; i < num_segments; ++i) {
+		osg::Geode* stem_geode = new osg::Geode();
+		osg::PositionAttitudeTransform* stem_transform =
+			new osg::PositionAttitudeTransform();
+		stem_transform->addChild(stem_geode);
+		
+		stem_geode->addDrawable(this->create_truncated_cone_geometry(base_radius, head_radius, seg_length, colour));
+		// Attach segment to previous segment.
+		// Assume z axis is only positioned upward for now.
+		stem_transform->setPosition(osg::Vec3(0.0, 0.0, i * (seg_len * 1.5)));
+		
+		//TODO: Rotate the segments
+		
+		stem->addChild(stem_transform);
+		// Continue to decrement base and head radius for each segment until we have reached smallest head radius
+		if (head_radius > 1.0) {
+			base_radius--;
+			head_radius--;
+		}
+	}
 	osgUtil::SmoothingVisitor sv;
 	stem->accept(sv);
 	return stem;
