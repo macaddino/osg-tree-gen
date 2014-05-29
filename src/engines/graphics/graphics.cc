@@ -69,7 +69,6 @@ void GraphicsEngine::create_object() {
 	osg::PositionAttitudeTransform* obj_transform =
 		new osg::PositionAttitudeTransform();
 	Stem *stem_node_parent = NULL;
-	bool set_parent_stem = false;
 	Stem *stem_node_child = NULL;
 
 	for (int i = 0; i < 2; ++i) {
