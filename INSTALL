@@ -1,0 +1,34 @@
+HOW TO INSTALL AND RUN THIS OSG TREE GEN
+
+INSTALLATION:
+
+osg-tree-gen has only been successfully tested on Ubuntu 12.04.
+
+Prerequisites:
+cmake, cmake-gui
+OpenScenGraph Debian Dependencies (http://trac.openscenegraph.org/projects/osg//wiki/Support/PlatformSpecifics/Debian-Dependencies)
+OpenSceneGraph 3.2.1 rc2 full source (http://www.openscenegraph.org/downloads/developer_releases/OpenSceneGraph-3.2.1-rc2.zip)
+
+
+After having configured, built, and installed all of the above prerequisites,
+you are now ready to build osg-tree-gen! Once in the osg-tree-gen directory, the
+following commands will build the generator:
+
+cd src
+cmake CMakeLists.txt
+make
+
+----------------------------------
+
+RUNNING THE GAME:
+
+To run the generator, type
+./tree-gen
+
+Click-drag your mouse to rotate the camera.
+Scroll in and out to zoom in and out. Press the spacebar to return to normal zoom.
+Press the Esc key to exit the generator.
+
+If you would like to play around with tree variables, please feel free to modify
+create_object() in engines/graphics/graphics.cc. A list of all variables along with
+a description is found in classes/stem.h.
