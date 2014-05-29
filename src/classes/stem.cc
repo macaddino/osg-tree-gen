@@ -4,18 +4,41 @@
 #include <osg/Group>
 #include <osg/PositionAttitudeTransform>
 #include <osg/PrimitiveSet>
+#include <osg/Matrixd>
+#include <osg/MatrixTransform>
+#include <osg/Shape>
+#include <osg/ShapeDrawable>
 #include <osg/Vec3>
+#include <osg/Vec3d>
 #include <osg/Vec4>
 #include <osgUtil/SmoothingVisitor>
 #include <cmath>
+#include <iostream>
 
-Stem::Stem(int recursion_level, int num_segments, int curve, int curve_back, int curve_variation, Stem *parent) : recursion_level(recursion_level), num_segments(num_segments), curve(curve), curve_back(curve_back), curve_variation(curve_variation), parent(parent) {
-	float stem_len = 15.0;
-	this->stem = make_stem(this->num_segments, stem_len);
+Stem::Stem(int recursion_level, int orientation, float diameter_rotation, float length, float base_radius, float length_onto_parent, osg::Vec3 base_pos, int num_segments, int curve, int curve_back, int curve_variation, int seg_splits, int base_splits, float split_angle, float split_angle_variation, Stem *parent) : recursion_level(recursion_level), orientation(orientation), diameter_rotation(diameter_rotation), length(length), base_radius(base_radius), length_onto_parent(length_onto_parent), base_pos(base_pos), num_segments(num_segments), curve(curve), curve_back(curve_back), curve_variation(curve_variation), seg_splits(seg_splits), base_splits(base_splits), split_angle(split_angle), split_angle_variation(split_angle_variation), parent(parent) {
+	this->stem = new osg::Group;
+	this->stem_trans = new osg::PositionAttitudeTransform;
+	make_stem();
+}
+
+float Stem::get_length() {
+	return this->length;
+}
+
+float Stem::get_base_radius() {
+	return this->base_radius;
+}
+
+osg::Vec3 Stem::get_base_pos() {
+	return this->base_pos;
+}
+
+osg::Vec3 Stem::get_top_pos() {
+	return this->top_pos;
 }
 
 // Function taken from http://forum.openscenegraph.org/viewtopic.php?t=3289&view=previous
-osg::Geometry * Stem::create_truncated_cone_geometry(float start_radius, float end_radius, float length, osg::Vec4 *colour) {
+osg::Geometry * Stem::create_truncated_cone_geometry(float start_radius, float end_radius, float length, osg::Vec4 *colour, float bottom_height) {
 	// Here's our cone/cylinder implementation. We will create the top/bottom
 	// by triangle fans and the body will connect the two as a quad strip
 
@@ -82,13 +105,13 @@ osg::Geometry * Stem::create_truncated_cone_geometry(float start_radius, float e
 	//
 	
 	// Create the centre vertex in the trianglestrip that will form the bottom
-	vertices->push_back(osg::Vec3f(0.0f, 0.0f, 0.0f));			
+	vertices->push_back(osg::Vec3f(0.0f, 0.0f, 0.0f + bottom_height));			
 	bottomPrimitive->push_back(j++);
 
 	// Create the surrounding vertices for the bottom
 	for (int i = 0; i <= numberSegments; i++) {
 		// Set the vertex location
-		vertices->push_back(osg::Vec3f(xBottom[i], yBottom[i], 0.0f));
+		vertices->push_back(osg::Vec3f(xBottom[i], yBottom[i], 0.0f + bottom_height));
 
 		// Set the index to the vertex in the bottom primitive
 		bottomPrimitive->push_back(j++);
@@ -99,14 +122,14 @@ osg::Geometry * Stem::create_truncated_cone_geometry(float start_radius, float e
 	//
 
 	// Create the centre vertex in the trianglestrip that will form the top
-	vertices->push_back(osg::Vec3f(0.0f, 0.0f, length));
+	vertices->push_back(osg::Vec3f(0.0f, 0.0f, length + bottom_height));
 	topPrimitive->push_back(j++);
 
 	// Create surrounding vertices for the top in reverse order, so the normals
 	// point the other way
 	for (int i = numberSegments; i >=0; i--) {
 		// Set the vertex location
-		vertices->push_back(osg::Vec3f(xTop[i], yTop[i], length));
+		vertices->push_back(osg::Vec3f(xTop[i], yTop[i], length + bottom_height));
 
 		// Set the index to the vertex in the bottom primitive
 		topPrimitive->push_back(j++);
@@ -142,51 +165,125 @@ osg::Geometry * Stem::create_truncated_cone_geometry(float start_radius, float e
 	coneBodyGeometry->setColorBinding(osg::Geometry::BIND_OVERALL);
 	
 	return coneBodyGeometry;
-/*
-	finally {
-		delete [] xTop;
-		delete [] yTop;
-		delete [] xBottom;
-		delete [] yBottom;
-	}
-*/
 } 
 
-osg::Group * Stem::make_stem(int num_segments, float stem_len) {
-	osg::Group *stem = new osg::Group();
-
+void Stem::make_stem() {
 	// Make the assumption that each segment will be of equal length
-	float seg_length = stem_len / num_segments;
-
-	// Have orange color for stem.
-	osg::Vec4* colour = new osg::Vec4(1.0, 0.5, 0.1, 1.0);
+	float seg_length = this->length / this->num_segments;
 	
 	// For now, just decrement radii by one for each segment
 	// Assume head radius is one unit less than base radius
-	float base_radius = 5.0;
-	float head_radius = base_radius - 1.0;
+	float head_radius = this->base_radius * .75;
 	
-	for (int i = 0; i < num_segments; ++i) {
-		osg::Geode* stem_geode = new osg::Geode();
-		osg::PositionAttitudeTransform* stem_transform =
-			new osg::PositionAttitudeTransform();
-		stem_transform->addChild(stem_geode);
+	float rotate_degrees_first_half;
+	float rotate_degrees_second_half;
+	float random_degrees_rotation;
+
+	if (this->curve_back == 0) {
+		rotate_degrees_first_half = this->curve / (float) this->num_segments;
+		rotate_degrees_second_half = rotate_degrees_first_half;
+	}
+	else {
+		rotate_degrees_first_half = this->curve / (this->num_segments / 2);
+		rotate_degrees_second_half = this->curve_back / (this->num_segments / 2);
+	}
+
+	random_degrees_rotation = this->curve_variation / this->num_segments;
+
+	osg::Vec3 top_of_prev_rotated_cylinder = osg::Vec3(0.0, 0.0, 0.0);
+
+	make_stem_segments(this->num_segments, 0, this->base_radius, head_radius, rotate_degrees_second_half, rotate_degrees_first_half, random_degrees_rotation, 1, top_of_prev_rotated_cylinder, 1);
+
+	if (this->orientation == Orientation::HORIZONTAL) {
+		// For horizontal stems, run stem through 2 rotation transforms
+		// The first transform converts it from a vertical to a horizontal stem
+		// The second transform determines its position around the parent stem
+		osg::PositionAttitudeTransform *pre_rotate = new osg::PositionAttitudeTransform;
+		pre_rotate->addChild(this->stem);
+		pre_rotate->setAttitude((osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(0, 0, 1)))*(osg::Quat(osg::DegreesToRadians(90.0f),
+			osg::Vec3d(1, 0, 0)))*(osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(0, 1, 0))));
+	
+		this->base_pos = osg::Vec3(this->parent->get_base_pos().x(), this->parent->get_base_pos().y(), this->parent->get_base_pos().z() + this->length_onto_parent);
+		osg::Vec3 top_pos_before_rotate = osg::Vec3(this->base_pos.x(), this->base_pos.y() - this->length/2, this->base_pos.z());
+		osg::Matrixd rot_mat = osg::Matrixd((osg::Quat(osg::DegreesToRadians(this->diameter_rotation),
+			osg::Vec3d(0, 0, 1)))*(osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(1, 0, 0)))*(osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(0, 1, 0))));
+		this->top_pos = rot_mat * top_pos_before_rotate;
+
+		this->stem_trans->addChild(pre_rotate);
+		this->stem_trans->setAttitude((osg::Quat(osg::DegreesToRadians(this->diameter_rotation),
+			osg::Vec3d(0, 0, 1)))*(osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(1, 0, 0)))*(osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(0, 1, 0))));
+		// Position stem on the midpoint of parent stem.
+		if (this->recursion_level > 0) {
+			this->stem_trans->setPosition(this->base_pos);
+		}
+	} else if (this->orientation == Orientation::VERTICAL) {
+		// For vertical stems, only need to determine position around parent stem
+		this->stem_trans->addChild(this->stem);
+		this->stem_trans->setAttitude((osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(0, 0, 1)))*(osg::Quat(osg::DegreesToRadians(0.0f + this->diameter_rotation),
+			osg::Vec3d(1, 0, 0)))*(osg::Quat(osg::DegreesToRadians(0.0f),
+			osg::Vec3d(0, 1, 0))));
 		
-		stem_geode->addDrawable(this->create_truncated_cone_geometry(base_radius, head_radius, seg_length, colour));
-		// Attach segment to previous segment.
-		// Assume z axis is only positioned upward for now.
-		stem_transform->setPosition(osg::Vec3(0.0, 0.0, i * (seg_len * 1.5)));
-		
-		//TODO: Rotate the segments
-		
-		stem->addChild(stem_transform);
-		// Continue to decrement base and head radius for each segment until we have reached smallest head radius
-		if (head_radius > 1.0) {
-			base_radius--;
-			head_radius--;
+		if (this->recursion_level > 0) {
+			this->base_pos = this->parent->get_top_pos();
+			this->stem_trans->setPosition(this->base_pos);
 		}
 	}
-	osgUtil::SmoothingVisitor sv;
-	stem->accept(sv);
-	return stem;
+
 }
+
+void Stem::make_stem_segments(int num_segments, int seg_index, float b_radius, float h_radius, float rotate_degrees_second_half, float rotate_degrees_first_half, float random_degrees_rotation, int left, osg::Vec3 pivot_point, int split_angle_sign) {
+	// Return without recursively calling function if we have rendered all segments.
+	if (num_segments == 0)
+		return;
+
+	float rotation_amount;
+	float seg_length = this->length / this->num_segments;
+
+	// Have orange color for stem.
+	osg::Vec4* colour = new osg::Vec4(1.0, 0.5, 0.1, 1.0);
+
+	// Determine whether segment is in first or second half of stem.
+	if (seg_index >= (this->num_segments / 2)) {
+		rotation_amount = rotate_degrees_second_half + random_degrees_rotation;
+	} else {
+		rotation_amount = rotate_degrees_first_half + random_degrees_rotation;
+	}
+
+	osg::Geode* stem_geode = new osg::Geode();
+	osg::PositionAttitudeTransform* stem_transform =
+		new osg::PositionAttitudeTransform();
+	stem_transform->addChild(stem_geode);
+
+	osg::Quat rot_quat = osg::Quat(osg::DegreesToRadians(rotation_amount), osg::Vec3d(1, 0, 0));
+
+	// Attach segment to previous segment.
+	stem_geode->addDrawable(this->create_truncated_cone_geometry(b_radius, h_radius, seg_length, colour, seg_length * seg_index));
+
+	// Rotate cylinder.
+	stem_transform->setPivotPoint(pivot_point);
+	stem_transform->setAttitude(rot_quat);
+
+	this->stem->addChild(stem_transform);
+	// Continue to decrement base and head radius for each segment until we have reached smallest head radius
+	b_radius = b_radius * .75;
+	h_radius = b_radius * .75;
+
+	// Recursively create stem segments and splits
+	if (this->seg_splits == 0) {
+		make_stem_segments(num_segments - 1, seg_index + 1, b_radius, h_radius, rotate_degrees_second_half, rotate_degrees_first_half, random_degrees_rotation, 1, pivot_point, 1);
+	} else if (this->seg_splits == 1) {
+		// Add branch split angle if branches split
+		float split_a = (this->split_angle + this->split_angle_variation);
+		make_stem_segments(num_segments - 1, seg_index + 1, b_radius, h_radius, rotate_degrees_second_half, rotate_degrees_first_half, random_degrees_rotation - split_a*2, -1, pivot_point, -1);
+		make_stem_segments(num_segments - 1, seg_index + 1, b_radius, h_radius, rotate_degrees_second_half, rotate_degrees_first_half, random_degrees_rotation + split_a*2, 1, pivot_point, 1);
+	}
+}
+
+// E solo un trucco!

@@ -17,6 +17,7 @@
 #include <osgGA/TrackballManipulator>
 #include <osgViewer/ViewerBase>
 #include <ctime>
+#include <cmath>
 
 GraphicsEngine::GraphicsEngine() {}
 
@@ -27,24 +28,9 @@ void GraphicsEngine::ignite() {
 }
 
 void GraphicsEngine::cycle() {
-
 	if (this->viewer.done())
 		shutdown();
-
-	//clock_t time1 = clock();
-	// check packet queue for updates
-	// if found object and event packet, compare each object to list of rendered objects
-	// for each object which is already rendered, set UpdateObjectCallback (simply a boolean) to true -- this boolean can be mapped to the object
-	// for each object we need to render which is not already present, call a function which creates a new object and adds it to the group, sets its updatecallback, etc
-	// for each object which was rendered but isn't anymore, remove this object from the group node and free its update callback and free the node
-	// SO for each object we need a struct which encompasses the obj ID, the UpdateObjectCallback bool, the object Node, and perhaps the transform matrix?
-
 	render();
-
-	//clock_t time2 = clock();
-	//clock_t timediff = time2 - time1;
-	//float timediff_sec = ((float)timediff) / CLOCKS_PER_SEC;
-	//std::cout << "CYCLE LENGTH: " << timediff_sec << "SECONDS" << std::endl;
 }
 
 void GraphicsEngine::shutdown() {
@@ -80,20 +66,62 @@ void GraphicsEngine::render() {
 }
 
 void GraphicsEngine::create_object() {
-	// Three segments to the stem
-	Stem *stem_node = new Stem(1, 3, 0, 1, 1, NULL);
-	osg::Group* stem_group = stem_node->stem;
 	osg::PositionAttitudeTransform* obj_transform =
 		new osg::PositionAttitudeTransform();
-	obj_transform->addChild(stem_group);
+	Stem *stem_node_parent = NULL;
+	bool set_parent_stem = false;
+	Stem *stem_node_child = NULL;
+
+	for (int i = 0; i < 2; ++i) {
+		int orientation;
+		if ((i % 2) == 0) {
+			orientation = Orientation::VERTICAL;
+		} else {
+			orientation = Orientation::HORIZONTAL;
+		}
+
+		// Create a trunk with a bunch of subbranches.
+		// Trunk is not set to have variable characteristics, but subbranches are.
+		for (int j = 0; j < i * 17 + 1; ++j) {
+			if (i == 0) {
+				stem_node_parent = new Stem(i, orientation, 0.0, 70.0, 10.0, 0.0, osg::Vec3(0.0, 0.0, 0.0), 4, 0, 0, 0, 0, 0, 0.0, 0.0, NULL);
+				osg::PositionAttitudeTransform* stem_trans = stem_node_parent->stem_trans;
+				obj_transform->addChild(stem_trans);
+			} else {
+				float len_onto_parent = rand() % (int) (stem_node_parent->get_length() - (stem_node_parent->get_length() / 3)) + (stem_node_parent->get_length() / 3);
+				float len_onto_parent_percentage = (stem_node_parent->get_length() - len_onto_parent) / stem_node_parent->get_length();
+				int num_segments = len_onto_parent_percentage * 10 + 2;
+				stem_node_child = new Stem(
+					i,
+					orientation,
+					rand() % (180 - -180) + -180,
+					(stem_node_parent->get_length() / len_onto_parent) * 10,
+					len_onto_parent_percentage * 10.0,
+					len_onto_parent,
+					osg::Vec3(0.0, 0.0, 0.0),
+					num_segments,
+					rand() % (-10 - -90) + -90,
+					0,
+					rand() % (-10 - -90) + -90,
+					0,
+					0,
+					10.0,
+					rand() % (8 - 7) + 7,
+					stem_node_parent);
+				osg::PositionAttitudeTransform* stem_trans = stem_node_child->stem_trans;
+				obj_transform->addChild(stem_trans);
+				if (j == i * 15) {
+					stem_node_parent = stem_node_child;
+				}
+			}
+		}
+	}
 
 	osg::StateSet* state_set = new osg::StateSet();
 	osg::Material *mat = new osg::Material;
 	mat->setDiffuse(osg::Material::FRONT, osg::Vec4(1.0, 0.5, 0.1, 1.0));
-	mat->setSpecular(osg::Material::FRONT_AND_BACK, osg::Vec4(1.0, 1.0, 1.0, 1.0));
-	mat->setAmbient(osg::Material::FRONT, osg::Vec4(0.25, 0.25, 0.25, 1.0));
+	mat->setAmbient(osg::Material::FRONT, osg::Vec4(0.25, 0.0, 0.0, 1.0));
 	mat->setEmission(osg::Material::FRONT, osg::Vec4(0.0, 0.0, 0.0, 1.0));
-	mat->setShininess(osg::Material::FRONT, 63.0);
 	state_set->setAttribute(mat);
 	obj_transform->setStateSet(state_set);
 
@@ -101,8 +129,8 @@ void GraphicsEngine::create_object() {
 	osg::Vec3 obj_pos(0.0, 0.0, 0.0);
 	obj_transform->setPosition(obj_pos);
 
+	// Scale model such that it fits on the screen.
 	float orig_mesh_radius = obj_transform->getBound().radius();
-	// TODO: SET OBJECT RADIUS FROM STEM
 	float desired_radius = 9.5;
 	float scale_amt = 1 / (orig_mesh_radius / desired_radius);
 	obj_transform->setScale(osg::Vec3(scale_amt, scale_amt, scale_amt));
